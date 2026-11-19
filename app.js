@@ -61,7 +61,11 @@ function isPR(key, st, exclude){
   if (t==="c") return b.kg > 0 && kg > b.kg;
   return false;
 }
-const weekStart = () => { const d = new Date(); d.setHours(0,0,0,0); const wd = (d.getDay()+6)%7; d.setDate(d.getDate()-wd); return d.getTime(); };
+const weekStart = (off=0) => { const d = new Date(); d.setHours(0,0,0,0); const wd = (d.getDay()+6)%7; d.setDate(d.getDate()-wd+off*7); return d.getTime(); };
+const addDays = (t, n) => { const d = new Date(t); d.setDate(d.getDate()+n); return d.getTime(); };
+const dayKey = t => { const d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); };
+const WD = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
+let histOff = 0;
 
 /* ========= animação dos exercícios ========= */
 function animHTML(key, big){
@@ -94,13 +98,13 @@ function vHome(){
   const now = new Date(), wd = now.getDay(), h = now.getHours();
   const greet = h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
   const ws = weekStart();
-  const doneWk = new Set(DB.sessions.filter(s => s.start >= ws).map(s => (new Date(s.start).getDay())));
   const today = DAYS.find(d => d.wd === wd);
   const next = today || DAYS.find(d => d.wd > wd) || DAYS[0];
   const nextDone = DB.sessions.some(s => s.start >= ws && s.day === next.id && new Date(s.start).getDay() === wd);
   let h1 = `<div class="top"><div><div class="eyebrow">${greet}, Lucas</div><h1 class="title">${today ? "Hora de treinar" : "Dia de descanso"}</h1></div>
     <div class="icon-btn" style="color:var(--acc)">${I("flame")}</div></div>`;
-  h1 += `<div class="week">${["S","T","Q","Q","S"].map((l,i)=>{ const d=i+1; const done=doneWk.has(d); return `<div class="wd${done?" done":""}${d===wd?" today":""}"><i>${done?I("check"):""}</i>${l}</div>`; }).join("")}</div>`;
+  const doneDays = new Set(DB.sessions.map(x => dayKey(x.start))), todayK = dayKey(Date.now());
+  h1 += `<div class="week tap" data-weekhist>${WD.map((l,i)=>{ const t = addDays(ws,i), done = doneDays.has(t), isT = t===todayK, we = i>4; return `<div class="wd${done?" done":""}${isT?" today":""}${we?" we":""}"><span>${l}</span><i>${done?I("check"):new Date(t).getDate()}</i></div>`; }).join("")}</div>`;
   if (DB.active){
     const d = dayById(DB.active.day);
     h1 += `<div class="live tap" data-go="workout"><div class="pulse"></div><div class="grow"><b>Treino em andamento</b><div class="sub">${esc(d.nome)} · <span class="num" data-live>${fmtT((Date.now()-DB.active.start)/1000)}</span></div></div><div class="btn sm">Continuar</div></div>`;
@@ -301,39 +305,84 @@ function stopwatch(ei, si, c){
 }
 
 /* ========= detalhes do exercício ========= */
+const SEARCH = {
+  yt: q => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q),
+  gif: q => "https://www.google.com/search?tbm=isch&tbs=itp:animated&q=" + encodeURIComponent(q + " gif"),
+  giphy: q => "https://giphy.com/search/" + encodeURIComponent(q.replace(/\s+/g,"-")),
+  gv: q => "https://www.google.com/search?tbm=vid&q=" + encodeURIComponent(q)
+};
+function ytId(u){ const m = String(u).match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([\w-]{11})/); return m ? m[1] : null; }
+function mediaHTML(u){
+  const id = ytId(u);
+  if (id) return `<div class="media"><iframe src="https://www.youtube-nocookie.com/embed/${id}?rel=0&playsinline=1" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen loading="lazy"></iframe></div>`;
+  if (/\.(mp4|webm|mov)(\?|$)/i.test(u)) return `<div class="media"><video src="${esc(u)}" autoplay loop muted playsinline controls></video></div>`;
+  if (/\.(gif|webp|png|jpe?g)(\?|$)/i.test(u) || /giphy\.com\/media|media\.tenor\.com/i.test(u)) return `<div class="media img"><img src="${esc(u)}" alt=""></div>`;
+  return "";
+}
 function info(k){
-  const X = EX[k], yt = "https://www.youtube.com/results?search_query=" + encodeURIComponent(X.yt);
-  const b = bestFor(k, null), last = lastSetsFor(k, null);
-  sheet(`${animHTML(k,true)}<h3 style="margin-top:16px">${esc(X.n)}</h3>
+  const X = EX[k], b = bestFor(k, null), last = lastSetsFor(k, null);
+  DB.links = DB.links || {};
+  const saved = DB.links[k];
+  const media = saved ? mediaHTML(saved) : "";
+  sheet(`${media || animHTML(k,true)}<h3 style="margin-top:16px">${esc(X.n)}</h3>
     <div class="chips" style="margin-top:10px">${X.m.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div>
     <p class="cue">${esc(X.cue)}</p>
     ${last?`<div class="stats" style="margin-bottom:14px"><div class="stat"><b class="num" style="font-size:18px">${esc(prevText(X.t,last[0]))}</b><span>último treino</span></div><div class="stat"><b class="num" style="font-size:18px;color:var(--gold)">${X.t==="w"||X.t==="c"?fmtKg(b.kg)+" kg":X.t==="t"?b.sec+" s":X.t==="r"?b.reps+" reps":fmtKg(b.min)+" min"}</b><span>recorde</span></div></div>`:""}
-    <a class="btn yt full" href="${yt}" target="_blank" rel="noopener">${I("circle-play")} Ver vídeos no YouTube</a>
-    <button class="btn ghost full" data-close style="margin-top:10px">Fechar</button>
+    ${saved?`<div class="row" style="margin-bottom:14px"><a class="btn ghost grow" href="${esc(saved)}" target="_blank" rel="noopener">${I("circle-play")} Abrir meu vídeo/GIF</a><button class="icon-btn" id="lnkdel" aria-label="Remover link">${I("trash")}</button></div>${media?`<button class="link" id="showanim" style="margin:-6px 0 8px">${I("activity")} Ver ilustração</button>`:""}`:""}
+    <div class="h2" style="margin-top:6px">${I("zap")} Pesquisar vídeo ou GIF</div>
+    <div class="search"><input id="q" value="${esc(X.yt)}" enterkeyhint="search" aria-label="Termo de busca"><button class="icon-btn" id="qclr" aria-label="Limpar">${I("x")}</button></div>
+    <div class="sgrid"><button class="sbtn yt" data-s="yt">${I("circle-play")}YouTube</button><button class="sbtn" data-s="gif">${I("sparkles")}GIFs (Google)</button><button class="sbtn" data-s="giphy">${I("sparkles")}Giphy</button><button class="sbtn" data-s="gv">${I("circle-play")}Vídeos (Google)</button></div>
+    <div class="h2">${I("plus")} Salvar o vídeo/GIF que você escolheu</div>
+    <div class="sub" style="margin:-4px 2px 10px">Copie o link do vídeo do YouTube ou do GIF e cole aqui. Ele passa a aparecer neste exercício.</div>
+    <div class="search"><input id="lnk" placeholder="https://youtu.be/… ou link do GIF" inputmode="url" value="${esc(saved||"")}"><button class="btn sm" id="lnksave">Salvar</button></div>
+    <button class="btn ghost full" data-close style="margin-top:16px">Fechar</button>
     ${X.svg?`<div class="foot" style="margin-top:12px">Animação simplificada feita para este app.</div>`:""}`);
+  const ov = $("#ov");
+  ov.querySelectorAll("[data-s]").forEach(bt => bt.onclick = () => { const q = $("#q").value.trim() || X.n; window.open(SEARCH[bt.dataset.s](q), "_blank", "noopener"); });
+  $("#q").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); window.open(SEARCH.yt($("#q").value.trim()||X.n), "_blank", "noopener"); } });
+  $("#qclr").onclick = () => { $("#q").value = ""; $("#q").focus(); };
+  $("#lnksave").onclick = () => {
+    const v = $("#lnk").value.trim();
+    if (!/^https?:\/\//i.test(v)) { toast("Cole um link começando com https://"); return; }
+    DB.links[k] = v; save(true); haptic(12); toast("Link salvo"); info(k);
+  };
+  const del = $("#lnkdel"); if (del) del.onclick = () => { delete DB.links[k]; save(true); toast("Link removido"); info(k); };
+  const sa = $("#showanim"); if (sa) sa.onclick = () => { const m = ov.querySelector(".media"); if (m) m.outerHTML = animHTML(k,true); sa.remove(); };
 }
 
 /* ========= HISTÓRICO ========= */
+function sessionCard(s){
+  const d = dayById(s.day) || {nome:s.day};
+  return `<details class="card hist"><summary class="row"><div class="grow"><b>${esc(d.nome)}</b><div class="sub">${new Date(s.start).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})} · ${fmtT(((s.end||s.start)-s.start)/1000)} · ${fmtKg(s.vol||0)} kg · ${s.ex.reduce((a,e)=>a+e.sets.length,0)} séries</div></div><span class="chev">${I("chevron-right")}</span></summary>
+    <div style="margin-top:10px">${s.ex.map(e => `<div class="line"><b>${esc((EX[e.k]||{n:e.k}).n)}</b> · ${e.sets.map(x => esc(prevText((EX[e.k]||{t:"w"}).t, x)) + (x.pr ? " 🏆" : "")).join(", ")}</div>`).join("")}
+    <button class="link" data-del="${s.start}" style="margin-top:10px;color:var(--bad)">${I("trash")} Apagar treino</button></div></details>`;
+}
 function vHist(){
-  let h = `<div class="eyebrow">${DB.sessions.length} treinos</div><h1 class="title">Histórico</h1>`;
-  // mapa de 8 semanas
-  const ws = weekStart(), start = ws - 7*7*864e5, days = new Set(DB.sessions.map(s => { const d = new Date(s.start); d.setHours(0,0,0,0); return d.getTime(); }));
-  let cells = ""; const today = new Date(); today.setHours(0,0,0,0);
-  for (let i=0;i<56;i++){ const t = start + i*864e5; cells += `<i class="${days.has(t)?"on":""}${t>today.getTime()?" fut":""}" title="${fmtD(t)}"></i>`; }
-  const wk = Date.now()-7*864e5, last7 = DB.sessions.filter(s => s.start > wk);
-  h += `<div class="card" style="margin-top:18px"><div class="row"><div class="grow"><div class="sub">Últimas 8 semanas</div></div><span class="sub">S T Q Q S S D</span></div><div class="heat">${cells}</div></div>
-  <div class="stats" style="margin-top:10px"><div class="stat"><b class="num">${last7.length}<span style="font-size:15px;color:var(--mut)">/5</span></b><span>treinos em 7 dias</span></div><div class="stat"><b class="num">${fmtKg(last7.reduce((a,s)=>a+(s.vol||0),0))}</b><span>kg de volume em 7 dias</span></div></div>`;
-  if (!DB.sessions.length) h += `<div class="empty"><div class="big">${I("calendar-days")}</div>Nenhum treino concluído ainda.</div>`;
-  else {
-    h += `<div class="h2"><span class="dot"></span>Treinos</div><div class="stagger">`;
-    DB.sessions.forEach(s => {
-      const d = dayById(s.day) || {nome:s.day};
-      h += `<details class="card hist"><summary class="row"><div class="grow"><b>${esc(d.nome)}</b><div class="sub">${fmtDL(s.start)} · ${fmtT(((s.end||s.start)-s.start)/1000)} · ${fmtKg(s.vol||0)} kg</div></div><span class="chev">${I("chevron-right")}</span></summary>
-        <div style="margin-top:10px">${s.ex.map(e => `<div class="line"><b>${esc((EX[e.k]||{n:e.k}).n)}</b> · ${e.sets.map(x => esc(prevText((EX[e.k]||{t:"w"}).t, x)) + (x.pr ? " 🏆" : "")).join(", ")}</div>`).join("")}
-        <button class="link" data-del="${s.start}" style="margin-top:10px;color:var(--bad)">${I("trash")} Apagar treino</button></div></details>`;
-    });
-    h += `</div>`;
-  }
+  const ws = weekStart(histOff), we = addDays(ws, 7);
+  const wkS = DB.sessions.filter(s => s.start >= ws && s.start < we);
+  const fmtR = t => new Date(t).toLocaleDateString("pt-BR",{day:"numeric",month:"short"}).replace(".","");
+  const label = histOff===0 ? "Esta semana" : histOff===-1 ? "Semana passada" : `Há ${-histOff} semanas`;
+  let h = `<div class="eyebrow">${DB.sessions.length} treinos no total</div><h1 class="title">Histórico</h1>
+  <div class="weeknav"><button class="icon-btn" data-wk="-1" aria-label="Semana anterior">${I("chevron-left")}</button>
+    <div class="grow" style="text-align:center"><b>${label}</b><div class="sub">${fmtR(ws)} – ${fmtR(addDays(ws,6))}</div></div>
+    <button class="icon-btn" data-wk="1" ${histOff>=0?"disabled style='opacity:.3'":""} aria-label="Próxima semana">${I("chevron-right")}</button></div>
+  <div class="stats" style="grid-template-columns:1fr 1fr 1fr"><div class="stat"><b class="num">${wkS.length}<span style="font-size:14px;color:var(--mut)">/5</span></b><span>treinos</span></div><div class="stat"><b class="num">${fmtKg(wkS.reduce((a,s)=>a+(s.vol||0),0))}</b><span>kg volume</span></div><div class="stat"><b class="num">${wkS.reduce((a,s)=>a+s.ex.reduce((b,e)=>b+e.sets.length,0),0)}</b><span>séries</span></div></div>
+  <div class="stagger" style="margin-top:6px">`;
+  const todayK = dayKey(Date.now());
+  WD.forEach((l, i) => {
+    const t = addDays(ws, i), ss = wkS.filter(s => dayKey(s.start) === t), plan = DAYS.find(d => d.wd === (i+1)%7);
+    const fut = t > todayK;
+    h += `<div class="dayrow${t===todayK?" today":""}"><div class="dlabel"><b>${l}</b><span>${new Date(t).getDate()}</span></div><div class="grow">`;
+    if (ss.length) h += ss.map(sessionCard).join("");
+    else h += `<div class="restday">${t===todayK ? (plan ? `Hoje: ${esc(plan.nome)}` : "Descanso") : fut ? (plan ? `Previsto: ${esc(plan.nome)}` : "Descanso") : (plan ? `<span style="color:var(--bad)">Não treinou</span> · ${esc(plan.nome)}` : "Descanso")}</div>`;
+    h += `</div></div>`;
+  });
+  h += `</div>`;
+  // mapa de 12 semanas
+  const start = weekStart(-11), days = new Set(DB.sessions.map(s => dayKey(s.start)));
+  let cells = "";
+  for (let w=0; w<12; w++){ const off = w-11; cells += `<div class="hw${off===histOff?" sel":""}" data-hw="${off}">`; for (let i=0;i<7;i++){ const t = addDays(start, w*7+i); cells += `<i class="${days.has(t)?"on":""}${t>todayK?" fut":""}"></i>`; } cells += `</div>`; }
+  h += `<div class="h2"><span class="dot"></span>Últimas 12 semanas</div><div class="card"><div class="heat2">${cells}</div><div class="sub" style="margin-top:10px">Toque numa coluna para abrir a semana.</div></div>`;
   h += `<div class="h2"><span class="dot"></span>Backup</div><div class="card"><div class="sub" style="margin-bottom:12px">Os dados ficam só neste celular. Faça um backup de vez em quando (ex.: salve no Drive ou mande para você no WhatsApp).</div>
     <div class="row"><button class="btn ghost grow" id="exp">${I("download")} Exportar</button><label class="btn ghost grow" style="cursor:pointer">${I("upload")} Importar<input type="file" id="imp" accept="application/json,.json" hidden></label></div></div>`;
   return h;
@@ -453,6 +502,9 @@ $("#app").addEventListener("click", async ev => {
   if ((el = t.closest("[data-pr]"))) return showPR(el.dataset.pr);
   if ((el = t.closest("[data-del]"))) { const st = +el.dataset.del; if (await ask("Apagar este treino do histórico?", "Apagar")){ DB.sessions = DB.sessions.filter(s => s.start !== st); save(true); render(); } return; }
   if (t.closest("#exp")) return exportData();
+  if ((el = t.closest("[data-wk]"))) { const n = histOff + (+el.dataset.wk); if (n <= 0){ histOff = n; haptic(6); renderKeep(); } return; }
+  if ((el = t.closest("[data-hw]"))) { histOff = +el.dataset.hw; haptic(6); render(); return; }
+  if (t.closest("[data-weekhist]")) { histOff = 0; return go("hist"); }
 });
 $("#app").addEventListener("change", ev => { if (ev.target.id === "imp" && ev.target.files[0]) importData(ev.target.files[0]); });
 $("#app").addEventListener("input", ev => onInput(ev.target));

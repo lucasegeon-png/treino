@@ -1,5 +1,5 @@
 "use strict";
-const VERSION = "treino-v1";
+const VERSION = "treino-v2";
 const ASSETS = [
 "./",
 "index.html",

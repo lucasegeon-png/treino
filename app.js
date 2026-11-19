@@ -199,7 +199,7 @@ function vWorkout(){
       });
       h += `<button class="chk" data-chk="${ei}:${si}" aria-label="Concluir série">${I("check")}</button></div>`;
     });
-    h += `</div><div class="ex-actions"><button class="link acc" data-add="${ei}">${I("plus")} Série</button>${e.sets.length>1?`<button class="link" data-rm="${ei}">${I("minus")} Remover</button>`:""}</div></div>`;
+    h += `</div><div class="ex-actions"><button class="link acc" data-add="${ei}">${I("plus")} Série</button><button class="link" data-info="${e.k}">${I("sparkles")} Vídeo / GIF</button>${e.sets.length>1?`<button class="link" data-rm="${ei}">${I("minus")} Remover</button>`:""}</div></div>`;
   });
   h += `<button class="btn danger full" id="discard" style="margin-top:22px">${I("trash")} Descartar treino</button>`;
   return h;
@@ -522,10 +522,13 @@ if (DB.active) keepAwake();
 
 /* ========= PWA: service worker + atualização ========= */
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-  navigator.serviceWorker.register("sw.js").then(reg => {
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (reloaded) return; reloaded = true; save(true); location.reload(); });
+  navigator.serviceWorker.register("sw.js", {updateViaCache: "none"}).then(reg => {
+    reg.update().catch(() => {});
     reg.addEventListener("updatefound", () => {
       const nw = reg.installing; if (!nw) return;
-      nw.addEventListener("statechange", () => { if (nw.state === "installed" && navigator.serviceWorker.controller) toast("Nova versão instalada. Reabra o app para atualizar."); });
+      nw.addEventListener("statechange", () => { if (nw.state === "installed" && navigator.serviceWorker.controller) toast("Atualizando o app…"); });
     });
   }).catch(() => {});
 }
